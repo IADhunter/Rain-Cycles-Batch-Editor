@@ -5,9 +5,15 @@ import sys
 import core_logic as core
 
 def get_resource_path(relative_path):
+    """Obtiene la ruta correcta tanto en desarrollo como en ejecutable"""
     if getattr(sys, 'frozen', False):
-        return os.path.join(sys._MEIPASS, "internal", relative_path)
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+        # Cuando está compilado como .exe
+        base_path = sys._MEIPASS
+    else:
+        # Cuando se ejecuta como script
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
 
 def get_external_path():
     if getattr(sys, 'frozen', False):
@@ -36,9 +42,13 @@ class RCBEApp(ctk.CTk):
         self.resizable(True, True)
         self.minsize(1366, 768)
 
+        # ===== ICONO (corregido para .exe) =====
         try:
+            import ctypes
             icon_path = get_resource_path("icon.ico")
             if os.path.exists(icon_path):
+                # Establecer AppUserModelID para Windows 10/11
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("RCBE")
                 self.iconbitmap(icon_path)
         except Exception:
             pass
