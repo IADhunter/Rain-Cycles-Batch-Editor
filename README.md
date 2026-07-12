@@ -1,6 +1,6 @@
 # Rain-World-State-Batch-Editor
 
-![Interface Preview](UI.png)
+![Interface Preview](https://github.com/IADhunter/Rain-Cycles-Batch-Editor/blob/main/Screenshot.png)
 background image official art by Del Northern edited :)
 
 **RWSBE** is a tool designed for the bulk editing of Rain World room configuration files (`settings.txt`).
