@@ -6,7 +6,7 @@
 
 Its main purpose is to facilitate the integration of regions into the [Rain Cycles](https://github.com/IADhunter/Rain-Cycles) mod, providing an easy way to create multiple dynamic states across several settings at once. It is the successor to [Rain-World-State-Batch-Editor](https://github.com/IADhunter/Rain-World-State-Batch-Editor), significantly improving and expanding its capabilities.
 
-The goal is to edit files in batches while respecting the logic and artistic intent of each room. The tool **only replaces existing parameters**; it does not create new parameters from scratch (except for RainCycles, which can be added if it does not exist).
+The goal is to edit files in batches while respecting the logic and artistic intent of each room. The tool **only replaces existing parameters**; it does not create new parameters from scratch (except for RainCycles and ModifyEffectColor, which can be added if they do not exist).
 
 ## Features
 
@@ -49,7 +49,19 @@ This section uses a **decimal percentage system** (where `1` is the normal value
 
 ### Template
 
-* Direct editing of the `Template:` field in the configuration file.
+* Batch replacement of the `Template:` field. Add rows with the old value and the new value to replace it across all files.
+* If the line does not exist and a new value is provided, it is automatically created at the beginning of the file.
+
+### Modify Effect Color A / B
+
+* Multipliers for the HSV (Hue, Saturation, Value) values of `ModifyEffectColorA` and `ModifyEffectColorB` entries inside the `Effects:` line.
+* Each section has:
+  - **Enable:** Master switch to activate the section.
+  - **H / S / V:** Multipliers (where `1` is no change, `0.5` is 50%, etc.).
+  - **Only Effect A/B:** When enabled, only creates the entry if the corresponding `EffectColorA:` or `EffectColorB:` line exists in the settings file.
+* If the entry already exists, the multipliers are applied to the current values.
+* If the entry does not exist, it is created at the end of the `Effects:` line with default values (`H:0, S:0.5, V:0.5`) and then multiplied.
+* When both are created, Effect Color A is placed before Effect Color B.
 
 ## Usage Instructions
 
@@ -64,4 +76,5 @@ This section uses a **decimal percentage system** (where `1` is the normal value
 If you wish to generate the executable from the source code, make sure you have the dependencies installed (`customtkinter`, `Pillow`) and use the following command:
 
 ```bash
-python -m PyInstaller --noconfirm --onefile --windowed --add-data "background.jpg;internal" --icon "icon.ico" main.py
+python -m PyInstaller --noconfirm --onefile --windowed --add-data "background.jpg;." --add-data "icon.ico;." --icon "icon.ico" main.py
+```

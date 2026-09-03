@@ -15,6 +15,35 @@ def _multiply_opacities(opacity_parts, factor):
     return result
 
 
+def _multiply_effect_color(entry, h_mult, s_mult, v_mult):
+    """Multiplica los valores HSV de una entrada ModifyEffectColor.
+    Formato: ModifyEffectColorX-H,S,V-x-y
+    Devuelve la entrada con los valores multiplicados."""
+    parts = entry.split("-", 2)
+    if len(parts) < 3:
+        return entry
+    prefix = parts[0]  # ModifyEffectColorA o ModifyEffectColorB
+    coords = parts[2]  # x-y
+
+    hsv_str = parts[1]  # H,S,V
+    hsv_vals = hsv_str.split(",")
+    if len(hsv_vals) < 3:
+        return entry
+
+    try:
+        h = float(hsv_vals[0])
+        s = float(hsv_vals[1])
+        v = float(hsv_vals[2])
+    except (ValueError, TypeError):
+        return entry
+
+    h_new = round(h * h_mult, 7)
+    s_new = round(s * s_mult, 7)
+    v_new = round(v * v_mult, 7)
+
+    return f"{prefix}-{h_new},{s_new},{v_new}-{coords}"
+
+
 def _build_raincycles_line(rain_type, rain_view, rain_tint):
     """Construye la línea RainCycles según Type/View/Tint.
     Devuelve None si la línea debe eliminarse (Vanilla o sin type)."""
@@ -69,7 +98,22 @@ def process_line_by_line(
     rain_tint=None,         # Str: "#FFFFFF #131920" (o solo uno de los dos)
 
     # --- Template (reemplaza el valor existente) ---
-    template_target=None    # Str: nuevo valor de Template
+    rules_template=None,    # Dict: {old_template: new_template}
+    template_create=None,   # Str: valor para crear Template si no existe
+
+    # --- Modify Effect Color A ---
+    modify_effect_a_enabled=False,   # Bool: switch principal
+    effect_a_h_mult=1.0,             # Float: multiplicador H
+    effect_a_s_mult=1.0,             # Float: multiplicador S
+    effect_a_v_mult=1.0,             # Float: multiplicador V
+    only_effect_a=False,             # Bool: solo si EffectColorA existe
+
+    # --- Modify Effect Color B ---
+    modify_effect_b_enabled=False,   # Bool: switch principal
+    effect_b_h_mult=1.0,             # Float: multiplicador H
+    effect_b_s_mult=1.0,             # Float: multiplicador S
+    effect_b_v_mult=1.0,             # Float: multiplicador V
+    only_effect_b=False              # Bool: solo si EffectColorB existe
 ):
     new_lines = []
     found_palette = False
@@ -77,6 +121,10 @@ def process_line_by_line(
     found_terrain_palette = False
     found_terrain_fade = False
     found_rain = False
+    found_template = False
+    found_effects = False
+    found_effect_color_a = False
+    found_effect_color_b = False
 
     try:
         f_b_op_factor = float(fade_b_opacity)
@@ -94,8 +142,11 @@ def process_line_by_line(
 
         # --- MODULE: TEMPLATE (reemplaza el valor existente) ---
         if clean_line.startswith("Template:"):
-            if template_target:
-                line = f"Template: {template_target}\n"
+            found_template = True
+            if rules_template:
+                val = clean_line.split(":", 1)[1].strip()
+                if val in rules_template:
+                    line = f"Template: {rules_template[val]}\n"
 
         # --- MODULE: MAIN PALETTE ---
         elif clean_line.startswith("Palette:"):
@@ -219,6 +270,71 @@ def process_line_by_line(
                     line = new_line
             # Si el switch está apagado, la línea original queda intacta.
 
+        # --- MODULE: EFFECT COLOR A/B (detectar existencia) ---
+        elif clean_line.startswith("EffectColorA:"):
+            found_effect_color_a = True
+        elif clean_line.startswith("EffectColorB:"):
+            found_effect_color_b = True
+
+        # --- MODULE: EFFECTS (ModifyEffectColor A/B) ---
+        elif clean_line.startswith("Effects:"):
+            found_effects = True
+            effects_header = "Effects: "
+            body = clean_line.replace(effects_header, "").strip()
+            entries = [e.strip() for e in body.split(",") if e.strip()]
+
+            # Buscar entradas existentes
+            entry_a = None
+            entry_b = None
+            other_entries = []
+            for entry in entries:
+                if entry.startswith("ModifyEffectColorA-"):
+                    entry_a = entry
+                elif entry.startswith("ModifyEffectColorB-"):
+                    entry_b = entry
+                else:
+                    other_entries.append(entry)
+
+            # Procesar Effect Color A
+            if modify_effect_a_enabled:
+                create_a = not only_effect_a or found_effect_color_a
+                if create_a:
+                    if entry_a:
+                        # Ya existe → multiplicar valores
+                        entry_a = _multiply_effect_color(entry_a, effect_a_h_mult, effect_a_s_mult, effect_a_v_mult)
+                    else:
+                        # No existe → crear con defaults y multiplicar
+                        h = round(0 * effect_a_h_mult, 7)
+                        s = round(0.5 * effect_a_s_mult, 7)
+                        v = round(0.5 * effect_a_v_mult, 7)
+                        entry_a = f"ModifyEffectColorA-{h},{s},{v}-30-30"
+
+            # Procesar Effect Color B
+            if modify_effect_b_enabled:
+                create_b = not only_effect_b or found_effect_color_b
+                if create_b:
+                    if entry_b:
+                        # Ya existe → multiplicar valores
+                        entry_b = _multiply_effect_color(entry_b, effect_b_h_mult, effect_b_s_mult, effect_b_v_mult)
+                    else:
+                        # No existe → crear con defaults y multiplicar
+                        h = round(0 * effect_b_h_mult, 7)
+                        s = round(0.5 * effect_b_s_mult, 7)
+                        v = round(0.5 * effect_b_v_mult, 7)
+                        entry_b = f"ModifyEffectColorB-{h},{s},{v}-40-40"
+
+            # Reconstruir línea Effects
+            final_entries = other_entries[:]
+            if entry_a:
+                final_entries.append(entry_a)
+            if entry_b:
+                final_entries.append(entry_b)
+
+            if final_entries:
+                line = effects_header + ", ".join(final_entries) + ",\n"
+            else:
+                line = "Effects: \n"
+
         # --- MODULE: PLACED OBJECTS (Decals & Lights) ---
         elif clean_line.startswith("PlacedObjects:"):
             header_prefix = "PlacedObjects: "
@@ -274,5 +390,31 @@ def process_line_by_line(
             if new_lines and not new_lines[-1].endswith('\n'):
                 new_lines[-1] += '\n'
             new_lines.append(new_line)
+
+    # Effects (si no existía la línea pero necesitamos crear ModifyEffectColor)
+    if not found_effects:
+        entries_to_create = []
+        if modify_effect_a_enabled:
+            create_a = not only_effect_a or found_effect_color_a
+            if create_a:
+                h = round(0 * effect_a_h_mult, 7)
+                s = round(0.5 * effect_a_s_mult, 7)
+                v = round(0.5 * effect_a_v_mult, 7)
+                entries_to_create.append(f"ModifyEffectColorA-{h},{s},{v}-30-30")
+        if modify_effect_b_enabled:
+            create_b = not only_effect_b or found_effect_color_b
+            if create_b:
+                h = round(0 * effect_b_h_mult, 7)
+                s = round(0.5 * effect_b_s_mult, 7)
+                v = round(0.5 * effect_b_v_mult, 7)
+                entries_to_create.append(f"ModifyEffectColorB-{h},{s},{v}-40-40")
+        if entries_to_create:
+            if new_lines and not new_lines[-1].endswith('\n'):
+                new_lines[-1] += '\n'
+            new_lines.append("Effects: " + ", ".join(entries_to_create) + ",\n")
+
+    # Template (si template_create está definido y no existía en el original)
+    if not found_template and template_create:
+        new_lines.insert(0, f"Template: {template_create}\n")
 
     return new_lines
