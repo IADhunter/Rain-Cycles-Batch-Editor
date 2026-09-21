@@ -1,6 +1,80 @@
 import os
 
 
+# Orden canónico de las líneas de settings según RoomSettings.Save() del juego.
+# Solo incluye las líneas que el juego escribe. RainCycles (mod) siempre va al final.
+SETTINGS_ORDER = [
+    "Template",
+    "DangerType",
+    "CeilingDrips",
+    "RainIntensity",
+    "RumbleIntensity",
+    "WaveSpeed",
+    "WaveLength",
+    "WaveAmplitude",
+    "SecondWaveLength",
+    "SecondWaveAmplitude",
+    "Clouds",
+    "Grime",
+    "BkgDroneVolume",
+    "BkgDroneNoThreatVolume",
+    "RandomItemDensity",
+    "RandomItemSpearChance",
+    "WaterReflectionAlpha",
+    "Palette",
+    "EffectColorA",
+    "EffectColorB",
+    "TerrainLight",
+    "TerrainStainAmount",
+    "TerrainStainBrightness",
+    "TerrainStainHeight",
+    "TerrainWaves",
+    "TerrainEdgeRadius",
+    "TerrainGooHeight",
+    "TerrainGrain",
+    "TerrainDepth",
+    "TerrainSkyFade",
+    "TerrainPalette",
+    "Effects",
+    "PlacedObjects",
+    "AmbientSounds",
+    "Triggers",
+    "FadePalette",
+    "TerrainFadePalette",
+    "RoomSpecificScriptActive",
+    "WetTerrain",
+]
+
+
+def _get_line_setting_name(line):
+    """Extrae el nombre del setting de una línea (parte antes de ':').
+    Devuelve None si la línea no es un setting válido."""
+    clean = line.strip()
+    if ":" in clean:
+        name = clean.split(":", 1)[0].strip()
+        if name in SETTINGS_ORDER:
+            return name
+    return None
+
+
+def _find_insert_position(new_lines, setting_name):
+    """Busca la posición correcta para insertar una línea con el nombre dado,
+    respetando el orden canónico de SETTINGS_ORDER.
+    Devuelve el índice donde se debe insertar (después de la última línea
+    cuyo setting aparece ANTES en el orden)."""
+    if setting_name not in SETTINGS_ORDER:
+        return len(new_lines)
+    target_idx = SETTINGS_ORDER.index(setting_name)
+    last_before = -1
+    for i, line in enumerate(new_lines):
+        name = _get_line_setting_name(line)
+        if name is not None and name in SETTINGS_ORDER:
+            idx = SETTINGS_ORDER.index(name)
+            if idx < target_idx:
+                last_before = i
+    return last_before + 1
+
+
 def _multiply_opacities(opacity_parts, factor):
     """Multiplica cada valor de opacidad de una lista por un factor, preservando
     los valores que no se puedan convertir a float tal como vinieron."""
@@ -280,8 +354,8 @@ def process_line_by_line(
         elif clean_line.startswith("Effects:"):
             found_effects = True
             effects_header = "Effects: "
-            body = clean_line.replace(effects_header, "").strip()
-            entries = [e.strip() for e in body.split(",") if e.strip()]
+            body = clean_line.replace(effects_header, "").strip().rstrip(",")
+            entries = [e.strip() for e in body.split(", ") if e.strip()]
 
             # Buscar entradas existentes
             entry_a = None
@@ -392,6 +466,8 @@ def process_line_by_line(
             new_lines.append(new_line)
 
     # Effects (si no existía la línea pero necesitamos crear ModifyEffectColor)
+    # Se inserta en la posición correcta según SETTINGS_ORDER (después de
+    # TerrainPalette y antes de PlacedObjects).
     if not found_effects:
         entries_to_create = []
         if modify_effect_a_enabled:
@@ -411,10 +487,18 @@ def process_line_by_line(
         if entries_to_create:
             if new_lines and not new_lines[-1].endswith('\n'):
                 new_lines[-1] += '\n'
-            new_lines.append("Effects: " + ", ".join(entries_to_create) + ",\n")
+            effects_line = "Effects: " + ", ".join(entries_to_create) + ",\n"
+            pos = _find_insert_position(new_lines, "Effects")
+            new_lines.insert(pos, effects_line)
 
     # Template (si template_create está definido y no existía en el original)
     if not found_template and template_create:
         new_lines.insert(0, f"Template: {template_create}\n")
+
+    # --- COMA FINAL EN Effects: (siempre, sin opción) ---
+    for i, line in enumerate(new_lines):
+        stripped = line.strip()
+        if stripped.startswith("Effects:") and stripped[len("Effects:"):].strip() and not stripped.endswith(","):
+            new_lines[i] = line.rstrip("\n").rstrip() + ",\n"
 
     return new_lines

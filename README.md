@@ -75,4 +75,4 @@ This section uses a **decimal percentage system** (where `1` is the normal value
 If you wish to generate the executable from the source code, make sure you have the dependencies installed (`customtkinter`, `Pillow`) and use the following command:
 
 ```bash
-python -m PyInstaller --noconfirm --onefile --windowed --add-data "background.jpg;internal" --icon "icon.ico" main.py
+python -m PyInstaller --noconfirm --onefile --windowed --add-data "background.jpg;." --add-data "icon.ico;." --icon "icon.ico" main.py
