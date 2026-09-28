@@ -178,10 +178,15 @@ class RCBEApp(ctk.CTk):
         self._place(self.frame_palette_header, 40, 90)
 
         # --- Palette B ---
-        self.btn_add_b1 = ctk.CTkButton(self, text="+ palette", width=208, height=28,
+        self.btn_add_b1 = ctk.CTkButton(self, text="+ palette", width=178, height=28,
                                        corner_radius=0, fg_color="#455f8b",
                                        command=lambda: self.add_rule_row(self.scroll_b1, self.rows_main_b))
         self._place(self.btn_add_b1, 40, 138)
+
+        self.btn_transfer_b1 = ctk.CTkButton(self, text="▶", width=28, height=28,
+                                            corner_radius=0, fg_color="#455f8b",
+                                            command=lambda: self.transfer_to_fade(self.rows_main_b, self.scroll_b2, self.rows_fade_b))
+        self._place(self.btn_transfer_b1, 220, 138)
 
         self.scroll_b1 = ctk.CTkScrollableFrame(self, width=192, height=140, corner_radius=0, fg_color="#2a2a32")
         self._place(self.scroll_b1, 40, 170)
@@ -324,10 +329,15 @@ class RCBEApp(ctk.CTk):
         self._place(self.frame_terrain_header, 892, 90)
 
         # Terrain Palette B
-        self.btn_add_terrain_b1 = ctk.CTkButton(self, text="+ T palette", width=208, height=28,
+        self.btn_add_terrain_b1 = ctk.CTkButton(self, text="+ T palette", width=178, height=28,
                                        corner_radius=0, fg_color="#455f8b",
                                        command=lambda: self.add_rule_row(self.scroll_terrain_b1, self.rows_terrain_main_b))
         self._place(self.btn_add_terrain_b1, 892, 138)
+
+        self.btn_transfer_terrain_b1 = ctk.CTkButton(self, text="▶", width=28, height=28,
+                                                    corner_radius=0, fg_color="#455f8b",
+                                                    command=lambda: self.transfer_to_fade(self.rows_terrain_main_b, self.scroll_terrain_b2, self.rows_terrain_fade_b))
+        self._place(self.btn_transfer_terrain_b1, 1072, 138)
 
         self.scroll_terrain_b1 = ctk.CTkScrollableFrame(self, width=192, height=140, corner_radius=0, fg_color="#2a2a32")
         self._place(self.scroll_terrain_b1, 892, 170)
@@ -482,6 +492,18 @@ class RCBEApp(ctk.CTk):
             if row.winfo_exists():
                 row.destroy()
         registry.clear()
+
+    def transfer_to_fade(self, source_registry, target_scroll, target_registry):
+        for row in source_registry:
+            if row.winfo_exists():
+                old_val = row.entry_old.get().strip()
+                new_val = row.entry_new.get().strip()
+                if old_val and new_val:
+                    new_row = RuleRow(target_scroll)
+                    new_row.entry_old.insert(0, old_val)
+                    new_row.entry_new.insert(0, new_val)
+                    new_row.pack(pady=2, fill="x")
+                    target_registry.append(new_row)
 
     def cycle_rain_type(self, direction):
         self.rain_type_index = (self.rain_type_index + direction) % len(self.rain_type_options)
