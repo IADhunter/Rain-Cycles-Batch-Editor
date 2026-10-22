@@ -42,10 +42,21 @@ This section uses a **decimal percentage system** (where `1` is the normal value
 ### Rain Cycles
 
 * Full control of the `RainCycles:` line with options for:
-  - **Type:** Blend, Static, Vanilla (Vanilla removes the line)
-  - **View:** ACV, RTV, PSV, ORV, AUV, None
-  - **Tint:** Two separate fields for hexadecimal colors (e.g. #FFFFFF #131920)
-* If the line does not exist and the switch is enabled, it is automatically created at the end of the file.
+  - **Type:** Blend, Static, Vanilla (Vanilla removes the line), Keep (preserve the existing type)
+  - **View:** ACV, RTV, PSV, ORV, AUV, None, Keep (preserve the existing view)
+  - **Tint:** Two separate fields for hexadecimal colors (e.g. #FFFFFF #131920). **Empty = keep** the existing tint; check **Clear** to remove it.
+* These controls are disabled until **Enable RainCycles** is on; the switch is the master gate for the whole line.
+* If the line does not exist and the switch is enabled, it is automatically created at the end of the file (when Type is not Keep).
+* Line format: `RainCycles: <Type:Blend><View:ACV><Tint:#FFFFFF #131920><Mod:mod,sky>`. When rewriting, the relative order of `<Mod>` and `<Tint>` is preserved.
+* Via MCP, `rain_cycles` is a **partial update**: omitted `type`/`view`/`tint` preserve the existing tag; use `view: "None"` or `tint: ""` to clear it. So "change Static to Blend" keeps the original view and tint.
+
+### Background image (Bkg)
+
+* Batch-writes the `Bkg` tag of the `RainCycles:` line: `<Mod:mod,sky[,sun[,fog]]>`, which sets the background illustration per room/state.
+* The image tag uses four text fields: **Mod** (mod id / `modinfo.json` name), **Sky**, **Fog** and **Sun** (PNG filenames inside `<mod>/Illustrations/`, without extension). The tag is only applied when **Mod** and **Sky** are both filled; **Sun**/**Fog** are optional (and only meaningful on the `PSV` view).
+* **Only Effect View:** when enabled, the tag is written only to settings whose `Effects:` line contains a vanilla view effect: `AboveCloudsView`, `PinkSky`, `RoofTopView`, `Outer Rim View`, `Inner Outer Rim View`, `Ancient Urban View`. It can only be enabled while **Enable RainCycles** is on, and it is turned off automatically when RainCycles is disabled.
+* **Effect:** field next to **Only Effect View**, default `AboveCloudsView`. Clear it to accept any of the six; otherwise only settings with that specific effect qualify. Accepts the full name or the alias (`ACV`, `RTV`, `PSV`, `ORV`, `AUV`; `ORV` covers both Outer Rim views), case-insensitive. The field is disabled while **Only Effect View** is off; an unrecognized name is rejected with an error.
+* The tag is inserted/updated inside the existing `RainCycles:` line without altering `Type`, `View` or `Tint`; a pre-existing `Bkg` tag is preserved unless the fields above override it.
 
 ### Template
 
@@ -69,6 +80,40 @@ This section uses a **decimal percentage system** (where `1` is the normal value
 3. The edited files will appear in the **output** folder.
 
 *The tool is non-destructive; your files in the input folder will always remain intact. However, it is always recommended to have a backup in case something goes wrong.*
+
+*Only the lines targeted by active rules are rewritten. Every other line is preserved byte-for-byte, including numeric precision, trailing commas, trailing whitespace and the original line endings (CRLF/LF) (a multiplier of `1.0` is a true no-op). The only deliberate normalization is the required trailing comma on the `Effects:` line: if it is missing, it is added.*
+
+## MCP server (AI agents)
+
+`mcp_server.py` exposes the editor as an **MCP server** (stdio, JSON-RPC 2.0, **no dependencies** — stdlib only, works with any Python 3.8+). Inspection and preview are read-only; writing to `output/` requires the explicit `generate` tool.
+
+**Tools:**
+
+| Tool | Purpose |
+|---|---|
+| `list_settings` | List every `.txt` in `input/` with a summary (template, palettes, `RainCycles` tags, has vanilla view effect). |
+| `get_setting` | Full summary + relevant raw lines (`RainCycles`, `Effects`, `Template`, `EffectColorA/B`). |
+| `preview_rules` | Apply rules in-memory and return unified diffs per file **without writing**. Supports `files` and `name_contains` filters. |
+| `generate` | Apply rules and **write** the results to `output/` (same behaviour as the GUI). Never modifies `input/`. |
+| `list_vanilla_views` | The six vanilla view effects used by `Only Effect View` / `bkg.view`. |
+| `rules_reference` | Rules object structure, defaults and notes. |
+
+The rules object mirrors the GUI sections (`palette`, `fade_palette`, `terrain_palette`, multiplicative effects, `rain_cycles`, `template`, `effect_color_a/b`, `bkg`). Omitted keys keep their defaults. Diffs compare semantically (trailing whitespace ignored). In `bkg`, `only_view` (GUI: **Only Effect View**) requires a vanilla view effect and `view` narrows it to one effect (full name or `ACV`/`RTV`/`PSV`/`ORV`/`AUV`, case-insensitive; empty = any; the GUI default is `AboveCloudsView`). `view` only has effect when `only_view` is true.
+
+**Client config (Claude Desktop / Cursor / opencode):**
+
+```json
+{
+  "mcpServers": {
+    "rcbe": {
+      "command": "python",
+      "args": ["D:\\Documentos\\Rain Cycles Mod\\Rain-Cycles-Batch-Editor\\mcp_server.py"]
+    }
+  }
+}
+```
+
+The server reads `<editor>/input` by default; override with the `RCBE_INPUT_DIR` env var or the `input_dir` argument. File arguments are confined to that folder (no path traversal). `preview_rules` never writes; `generate` writes only inside `output/` (override with `RCBE_OUTPUT_DIR` or `output_dir`).
 
 ## Compilation (For Developers)
 

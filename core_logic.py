@@ -46,9 +46,40 @@ SETTINGS_ORDER = [
 ]
 
 
+# Efectos de sala vanilla que crean un "view" (BackgroundScene) en Rain World.
+VIEW_EFFECTS = [
+    "AboveCloudsView",
+    "PinkSky",
+    "RoofTopView",
+    "Outer Rim View",
+    "Inner Outer Rim View",
+    "Ancient Urban View",
+]
+
+# Alias de la UI (View: ACV/RTV/PSV/ORV/AUV). ORV agrupa dos efectos vanilla.
+VIEW_EFFECT_ALIASES = {
+    "acv": ["AboveCloudsView"],
+    "rtv": ["RoofTopView"],
+    "psv": ["PinkSky"],
+    "orv": ["Outer Rim View", "Inner Outer Rim View"],
+    "auv": ["Ancient Urban View"],
+}
+
+
+def _resolve_view_effects(name):
+    name = (name or "").strip()
+    if not name:
+        return list(VIEW_EFFECTS)
+    key = name.lower()
+    if key in VIEW_EFFECT_ALIASES:
+        return list(VIEW_EFFECT_ALIASES[key])
+    for effect in VIEW_EFFECTS:
+        if key == effect.lower():
+            return [effect]
+    return []
+
+
 def _get_line_setting_name(line):
-    """Extrae el nombre del setting de una línea (parte antes de ':').
-    Devuelve None si la línea no es un setting válido."""
     clean = line.strip()
     if ":" in clean:
         name = clean.split(":", 1)[0].strip()
@@ -58,10 +89,6 @@ def _get_line_setting_name(line):
 
 
 def _find_insert_position(new_lines, setting_name):
-    """Busca la posición correcta para insertar una línea con el nombre dado,
-    respetando el orden canónico de SETTINGS_ORDER.
-    Devuelve el índice donde se debe insertar (después de la última línea
-    cuyo setting aparece ANTES en el orden)."""
     if setting_name not in SETTINGS_ORDER:
         return len(new_lines)
     target_idx = SETTINGS_ORDER.index(setting_name)
@@ -76,8 +103,6 @@ def _find_insert_position(new_lines, setting_name):
 
 
 def _multiply_opacities(opacity_parts, factor):
-    """Multiplica cada valor de opacidad de una lista por un factor, preservando
-    los valores que no se puedan convertir a float tal como vinieron."""
     result = []
     for raw in opacity_parts:
         raw = raw.strip()
@@ -90,9 +115,6 @@ def _multiply_opacities(opacity_parts, factor):
 
 
 def _multiply_effect_color(entry, h_mult, s_mult, v_mult):
-    """Multiplica los valores HSV de una entrada ModifyEffectColor.
-    Formato: ModifyEffectColorX-H,S,V-x-y
-    Devuelve la entrada con los valores multiplicados."""
     parts = entry.split("-", 2)
     if len(parts) < 3:
         return entry
@@ -118,9 +140,71 @@ def _multiply_effect_color(entry, h_mult, s_mult, v_mult):
     return f"{prefix}-{h_new},{s_new},{v_new}-{coords}"
 
 
-def _build_raincycles_line(rain_type, rain_view, rain_tint):
-    """Construye la línea RainCycles según Type/View/Tint.
-    Devuelve None si la línea debe eliminarse (Vanilla o sin type)."""
+def _has_vanilla_view_effect(input_lines, only_effect=None):
+    names = _resolve_view_effects(only_effect) if only_effect else VIEW_EFFECTS
+    if not names:
+        return False
+    for line in input_lines:
+        clean = line.strip()
+        if not clean.startswith("Effects:"):
+            continue
+        entries = clean[len("Effects:"):].split(", ")
+        for entry in entries:
+            entry = entry.strip()
+            for name in names:
+                if entry == name or entry.startswith(name + "-"):
+                    return True
+        return False
+    return False
+
+
+def _parse_raincycles_tags(line):
+    tags = {}
+    content = line.strip()
+    pos = 0
+    while pos < len(content):
+        start = content.find("<", pos)
+        if start < 0:
+            break
+        end = content.find(">", start)
+        if end < 0:
+            break
+        segment = content[start + 1:end]
+        if ":" in segment:
+            key, value = segment.split(":", 1)
+            tags[key.strip()] = value.strip()
+        pos = end + 1
+    return tags
+
+
+def _mod_before_tint(line):
+    mod = line.find("<Mod:")
+    if mod < 0:
+        return False
+    tint = line.find("<Tint:")
+    return tint < 0 or mod < tint
+
+
+def _build_bkg_tag(mod, sky, sun, fog):
+    mod = (mod or "").strip()
+    sky = (sky or "").strip()
+    sun = (sun or "").strip()
+    fog = (fog or "").strip()
+
+    if not mod or not sky:
+        return None
+
+    parts = [mod, sky]
+    if sun:
+        parts.append(sun)
+    elif fog:
+        parts.append("")
+    if fog:
+        parts.append(fog)
+    return ",".join(parts)
+
+
+def _build_raincycles_line(rain_type, rain_view, rain_tint, bkg=None, mod_first=False):
     if not rain_type or rain_type == "Vanilla":
         return None
 
@@ -128,10 +212,38 @@ def _build_raincycles_line(rain_type, rain_view, rain_tint):
 
     if rain_view and rain_view != "None":
         parts.append(f"<View:{rain_view}>")
-        if rain_tint:
-            parts.append(f"<Tint:{rain_tint}>")
+        if mod_first:
+            if bkg:
+                parts.append(f"<Mod:{bkg}>")
+            if rain_tint:
+                parts.append(f"<Tint:{rain_tint}>")
+        else:
+            if rain_tint:
+                parts.append(f"<Tint:{rain_tint}>")
+            if bkg:
+                parts.append(f"<Mod:{bkg}>")
 
-    return "RainCycles:" + "".join(parts) + "\n"
+    return "RainCycles: " + "".join(parts) + "\n"
+
+
+def detect_newline(path):
+    """Devuelve el estilo de salto de línea original del fichero."""
+    with open(path, "rb") as f:
+        raw = f.read()
+    if b"\r\n" in raw:
+        return "\r\n"
+    if b"\r" in raw:
+        return "\r"
+    return "\n"
+
+
+def write_setting_lines(path, lines, newline):
+
+    text = "".join(lines)
+    if newline != "\n":
+        text = text.replace("\n", newline)
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(text)
 
 
 def process_line_by_line(
@@ -187,7 +299,16 @@ def process_line_by_line(
     effect_b_h_mult=1.0,             # Float: multiplicador H
     effect_b_s_mult=1.0,             # Float: multiplicador S
     effect_b_v_mult=1.0,             # Float: multiplicador V
-    only_effect_b=False              # Bool: solo si EffectColorB existe
+    only_effect_b=False,             # Bool: solo si EffectColorB existe
+
+    # --- Bkg / Images (tag <Mod:mod,sky[,sun,fog]> dentro de RainCycles:) ---
+    bkg_enabled=False,               # Bool: activo si hay mod+sky
+    bkg_mod=None,                    # Str: id/nombre del mod
+    bkg_sky=None,                    # Str
+    bkg_fog=None,                    # Str
+    bkg_sun=None,                    # Str
+    bkg_only_view=False,             # Bool: solo en settings con view vanilla
+    bkg_view=None                    # Str: efecto vanilla concreto (nombre o alias)
 ):
     new_lines = []
     found_palette = False
@@ -209,6 +330,11 @@ def process_line_by_line(
         t_fb_op_factor = float(terrain_fade_b_opacity)
     except (TypeError, ValueError):
         t_fb_op_factor = 1.0
+
+    bkg_tag = _build_bkg_tag(bkg_mod, bkg_sky, bkg_sun, bkg_fog) if bkg_enabled else None
+    effect_filter = bkg_view if bkg_only_view else None
+    apply_bkg = bkg_tag is not None and (
+        not bkg_only_view or _has_vanilla_view_effect(input_lines, effect_filter))
 
     for line in input_lines:
         clean_line = line.strip()
@@ -244,7 +370,7 @@ def process_line_by_line(
             orig_id = parts[0].strip()
             opac_parts = parts[1:]
 
-            if orig_id in rules_fade:
+            if orig_id in rules_fade and (rules_fade[orig_id] != orig_id or f_b_op_factor != 1.0):
                 new_id = rules_fade[orig_id]
                 new_opac = _multiply_opacities(opac_parts, f_b_op_factor)
                 line = f"FadePalette: {new_id}, {', '.join(new_opac)}\n"
@@ -260,7 +386,7 @@ def process_line_by_line(
             orig_id = parts[0].strip()
             opac_parts = parts[1:]
 
-            if orig_id in rules_terrain_fade:
+            if orig_id in rules_terrain_fade and (rules_terrain_fade[orig_id] != orig_id or t_fb_op_factor != 1.0):
                 new_id = rules_terrain_fade[orig_id]
                 new_opac = _multiply_opacities(opac_parts, t_fb_op_factor)
                 line = f"TerrainFadePalette: {new_id}, {', '.join(new_opac)}\n"
@@ -270,79 +396,105 @@ def process_line_by_line(
 
         # --- MODULE: GRIME & CLOUDS ---
         elif clean_line.startswith("Grime:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"Grime: {round(val * grime_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if grime_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"Grime: {round(val * grime_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("Clouds:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"Clouds: {round(val * clouds_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if clouds_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"Clouds: {round(val * clouds_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         # --- MODULE: TERRAIN EFFECTS (multiplicadores escalares) ---
         elif clean_line.startswith("TerrainLight:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainLight: {round(val * terrain_light_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_light_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainLight: {round(val * terrain_light_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainStainAmount:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainStainAmount: {round(val * terrain_stain_amount_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_stain_amount_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainStainAmount: {round(val * terrain_stain_amount_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainStainBrightness:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainStainBrightness: {round(val * terrain_stain_brightness_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_stain_brightness_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainStainBrightness: {round(val * terrain_stain_brightness_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainStainHeight:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainStainHeight: {round(val * terrain_stain_height_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_stain_height_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainStainHeight: {round(val * terrain_stain_height_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainWaves:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainWaves: {round(val * terrain_waves_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_waves_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainWaves: {round(val * terrain_waves_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainGrain:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainGrain: {round(val * terrain_grain_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_grain_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainGrain: {round(val * terrain_grain_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
         elif clean_line.startswith("TerrainSkyFade:"):
-            try:
-                val = float(clean_line.split(":", 1)[1].strip())
-                line = f"TerrainSkyFade: {round(val * terrain_sky_fade_mult, 7)}\n"
-            except (ValueError, IndexError):
-                pass
+            if terrain_sky_fade_mult != 1.0:
+                try:
+                    val = float(clean_line.split(":", 1)[1].strip())
+                    line = f"TerrainSkyFade: {round(val * terrain_sky_fade_mult, 7)}\n"
+                except (ValueError, IndexError):
+                    pass
 
-        # --- MODULE: RAIN CYCLES ---
+        # --- MODULE: RAIN CYCLES (+ BKG) ---
         elif clean_line.startswith("RainCycles:"):
             found_rain = True
+            tags = _parse_raincycles_tags(clean_line)
+
             if rain_enabled:
-                new_line = _build_raincycles_line(rain_type, rain_view, rain_tint)
+                new_type = rain_type if rain_type is not None else tags.get("Type")
+                new_view = rain_view if rain_view is not None else tags.get("View")
+                new_tint = rain_tint if rain_tint is not None else tags.get("Tint")
+            else:
+                new_type = tags.get("Type")
+                new_view = tags.get("View")
+                new_tint = tags.get("Tint")
+
+            # El bkg existente se conserva salvo que el módulo lo sobreescriba.
+            new_bkg = tags.get("Mod")
+            if apply_bkg:
+                new_bkg = bkg_tag
+
+            if rain_enabled or (apply_bkg and new_type and new_view):
+                new_line = _build_raincycles_line(new_type, new_view, new_tint, new_bkg,
+                                                  _mod_before_tint(clean_line))
                 if new_line is None:
                     skip_line = True
-                else:
+                elif new_line != line:
                     line = new_line
-            # Si el switch está apagado, la línea original queda intacta.
+            # Si no, la línea original queda intacta.
 
         # --- MODULE: EFFECT COLOR A/B (detectar existencia) ---
         elif clean_line.startswith("EffectColorA:"):
@@ -397,53 +549,65 @@ def process_line_by_line(
                         v = round(0.5 * effect_b_v_mult, 7)
                         entry_b = f"ModifyEffectColorB-{h},{s},{v}-40-40"
 
-            # Reconstruir línea Effects
-            final_entries = other_entries[:]
-            if entry_a:
-                final_entries.append(entry_a)
-            if entry_b:
-                final_entries.append(entry_b)
+            if modify_effect_a_enabled or modify_effect_b_enabled:
+                final_entries = other_entries[:]
+                if entry_a:
+                    final_entries.append(entry_a)
+                if entry_b:
+                    final_entries.append(entry_b)
 
-            if final_entries:
-                line = effects_header + ", ".join(final_entries) + ",\n"
-            else:
-                line = "Effects: \n"
+                if final_entries:
+                    rebuilt = effects_header + ", ".join(final_entries) + ",\n"
+                else:
+                    rebuilt = "Effects: \n"
+                if rebuilt != line:
+                    line = rebuilt
 
         # --- MODULE: PLACED OBJECTS (Decals & Lights) ---
         elif clean_line.startswith("PlacedObjects:"):
-            header_prefix = "PlacedObjects: "
-            content = clean_line.replace(header_prefix, "")
-            objects = content.split(",")
-            processed_objects = []
+            if decal_mult != 1.0 or light_mult != 1.0:
+                header_prefix = "PlacedObjects: "
+                content = clean_line.replace(header_prefix, "")
+                had_trailing_comma = content.rstrip().endswith(",")
+                objects = content.split(",")
+                processed_objects = []
+                modified = False
 
-            for obj in objects:
-                if not obj.strip():
-                    continue
+                for obj in objects:
+                    if not obj.strip():
+                        continue
 
-                # Sub-Module: CustomDecals
-                if "CustomDecal" in obj:
-                    d_parts = obj.split("~")
-                    if len(d_parts) > 19:
-                        for i in [12, 14, 16, 18]:
-                            try:
-                                d_parts[i] = str(round(float(d_parts[i]) * decal_mult, 7))
-                            except (ValueError, IndexError):
-                                pass
-                        obj = "~".join(d_parts)
+                    # Sub-Module: CustomDecals
+                    if "CustomDecal" in obj and decal_mult != 1.0:
+                        d_parts = obj.split("~")
+                        if len(d_parts) > 19:
+                            for i in [12, 14, 16, 18]:
+                                try:
+                                    d_parts[i] = str(round(float(d_parts[i]) * decal_mult, 7))
+                                    modified = True
+                                except (ValueError, IndexError):
+                                    pass
+                            obj = "~".join(d_parts)
 
-                # Sub-Module: LightSources
-                elif "LightSource" in obj:
-                    l_parts = obj.split("~")
-                    try:
-                        header = l_parts[0].split("><")
-                        header[-1] = str(round(float(header[-1]) * light_mult, 7))
-                        l_parts[0] = "><".join(header)
-                        obj = "~".join(l_parts)
-                    except (ValueError, IndexError):
-                        pass
+                    # Sub-Module: LightSources
+                    elif "LightSource" in obj and light_mult != 1.0:
+                        l_parts = obj.split("~")
+                        try:
+                            header = l_parts[0].split("><")
+                            header[-1] = str(round(float(header[-1]) * light_mult, 7))
+                            l_parts[0] = "><".join(header)
+                            obj = "~".join(l_parts)
+                            modified = True
+                        except (ValueError, IndexError):
+                            pass
 
-                processed_objects.append(obj)
-            line = header_prefix + ",".join(processed_objects) + "\n"
+                    processed_objects.append(obj)
+
+                if modified:
+                    line = header_prefix + ",".join(processed_objects)
+                    if had_trailing_comma:
+                        line += ","
+                    line += "\n"
 
         if not skip_line:
             new_lines.append(line)
@@ -452,22 +616,14 @@ def process_line_by_line(
     while new_lines and not new_lines[-1].strip():
         new_lines.pop()
 
-    # --- AÑADIR PARÁMETROS FALTANTES AL FINAL ---
-    # NOTA: de forma definitiva, ningún parámetro se crea desde cero.
-    # Palette, FadePalette, TerrainPalette y TerrainFadePalette solo se
-    # editan/reemplazan si ya existen en el setting original.
-
-    # RainCycles (si está habilitado, tiene Type y no existía en el original)
     if not found_rain and rain_enabled:
-        new_line = _build_raincycles_line(rain_type, rain_view, rain_tint)
+        new_line = _build_raincycles_line(rain_type, rain_view, rain_tint,
+                                          bkg_tag if apply_bkg else None)
         if new_line is not None:
             if new_lines and not new_lines[-1].endswith('\n'):
                 new_lines[-1] += '\n'
             new_lines.append(new_line)
 
-    # Effects (si no existía la línea pero necesitamos crear ModifyEffectColor)
-    # Se inserta en la posición correcta según SETTINGS_ORDER (después de
-    # TerrainPalette y antes de PlacedObjects).
     if not found_effects:
         entries_to_create = []
         if modify_effect_a_enabled:
@@ -491,11 +647,9 @@ def process_line_by_line(
             pos = _find_insert_position(new_lines, "Effects")
             new_lines.insert(pos, effects_line)
 
-    # Template (si template_create está definido y no existía en el original)
     if not found_template and template_create:
         new_lines.insert(0, f"Template: {template_create}\n")
 
-    # --- COMA FINAL EN Effects: (siempre, sin opción) ---
     for i, line in enumerate(new_lines):
         stripped = line.strip()
         if stripped.startswith("Effects:") and stripped[len("Effects:"):].strip() and not stripped.endswith(","):

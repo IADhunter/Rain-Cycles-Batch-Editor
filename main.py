@@ -92,9 +92,9 @@ class RCBEApp(ctk.CTk):
         self.rows_template = []
 
         # RainCycles
-        self.rain_type_options = ["Blend", "Static", "Vanilla"]
+        self.rain_type_options = ["Blend", "Static", "Vanilla", "Keep"]
         self.rain_type_index = 0
-        self.rain_view_options = ["ACV", "RTV", "PSV", "ORV", "AUV", "None"]
+        self.rain_view_options = ["ACV", "RTV", "PSV", "ORV", "AUV", "None", "Keep"]
         self.rain_view_index = 0
 
         # Centro del diseño original (1366 / 2)
@@ -223,7 +223,7 @@ class RCBEApp(ctk.CTk):
                     font=("Trebuchet MS", 20, "bold")).place(x=10, y=5)
         self._place(self.frame_room_header, 504, 90)
 
-        self.frame_ambient_controls = ctk.CTkFrame(self, width=356, height=400, corner_radius=0, fg_color="#2d2d3d")
+        self.frame_ambient_controls = ctk.CTkFrame(self, width=356, height=470, corner_radius=0, fg_color="#2d2d3d")
         self._place(self.frame_ambient_controls, 504, 140)
 
         # Ambient multipliers
@@ -285,7 +285,8 @@ class RCBEApp(ctk.CTk):
 
         # Rain Cycles
         self.sw_rain_cycles = ctk.CTkSwitch(self.frame_ambient_controls, text="Enable RainCycles",
-                                           progress_color="#212d5d")
+                                           progress_color="#212d5d",
+                                           command=self._on_rain_cycles_toggle)
         self.sw_rain_cycles.place(x=15, y=228)
 
         ctk.CTkLabel(self.frame_ambient_controls, text="Type:").place(x=15, y=260)
@@ -315,12 +316,49 @@ class RCBEApp(ctk.CTk):
         self.btn_view_next.place(x=316, y=286)
 
         ctk.CTkLabel(self.frame_ambient_controls, text="Tint:").place(x=15, y=320)
+        self.chk_rain_tint_clear = ctk.CTkCheckBox(self.frame_ambient_controls, text="Clear",
+                                                   checkbox_width=18, checkbox_height=18,
+                                                   corner_radius=0)
+        self.chk_rain_tint_clear.place(x=60, y=318)
         self.ent_rain_tint_1 = ctk.CTkEntry(self.frame_ambient_controls, width=64, height=26,
                                            corner_radius=0, placeholder_text="#FFFFFF")
         self.ent_rain_tint_1.place(x=213, y=316)
         self.ent_rain_tint_2 = ctk.CTkEntry(self.frame_ambient_controls, width=64, height=26,
                                            corner_radius=0, placeholder_text="#131920")
         self.ent_rain_tint_2.place(x=280, y=316)
+
+        # Bkg / Images: escribe el tag <Mod:mod,sky,sun,fog> dentro de RainCycles:
+        self.sw_bkg_only_view = ctk.CTkSwitch(self.frame_ambient_controls, text="Only Effect View",
+                                             width=130, progress_color="#212d5d",
+                                             command=self._on_bkg_only_view_toggle)
+        self.sw_bkg_only_view.place(x=15, y=362)
+
+        ctk.CTkLabel(self.frame_ambient_controls, text="Effect:").place(x=161, y=360)
+        self.ent_bkg_view = ctk.CTkEntry(self.frame_ambient_controls, width=125, height=24,
+                                         corner_radius=0)
+        self.ent_bkg_view.insert(0, "AboveCloudsView")
+        self.ent_bkg_view.place(x=219, y=356)
+        self._on_bkg_only_view_toggle()
+
+        ctk.CTkLabel(self.frame_ambient_controls, text="Mod:").place(x=15, y=394)
+        self.ent_bkg_mod = ctk.CTkEntry(self.frame_ambient_controls, width=140, height=24,
+                                        corner_radius=0, placeholder_text="mod id")
+        self.ent_bkg_mod.place(x=80, y=390)
+
+        ctk.CTkLabel(self.frame_ambient_controls, text="Sky:").place(x=15, y=426)
+        self.ent_bkg_sky = ctk.CTkEntry(self.frame_ambient_controls, width=74, height=24, corner_radius=0)
+        self.ent_bkg_sky.place(x=47, y=422)
+
+        ctk.CTkLabel(self.frame_ambient_controls, text="Fog:").place(x=125, y=426)
+        self.ent_bkg_fog = ctk.CTkEntry(self.frame_ambient_controls, width=74, height=24, corner_radius=0)
+        self.ent_bkg_fog.place(x=157, y=422)
+
+        ctk.CTkLabel(self.frame_ambient_controls, text="Sun:").place(x=235, y=426)
+        self.ent_bkg_sun = ctk.CTkEntry(self.frame_ambient_controls, width=74, height=24, corner_radius=0)
+        self.ent_bkg_sun.place(x=267, y=422)
+
+        # Gate inicial: RainCycles OFF → Only Effect View (y su campo) OFF.
+        self._on_rain_cycles_toggle()
 
         # ==================== TERRAIN CONTROL ====================
         self.frame_terrain_header = ctk.CTkFrame(self, width=432, height=40, corner_radius=0, fg_color="#212d5d")
@@ -455,20 +493,20 @@ class RCBEApp(ctk.CTk):
         self.console_log = ctk.CTkLabel(self, text="🍉 Init 🍉", font=("Trebuchet MS", 15),
                                         width=240, height=32, text_color="#aaaaaa",
                                         fg_color="#1a1a22", corner_radius=0)
-        self._place(self.console_log, 563, 570)
+        self._place(self.console_log, 892, 620)
 
         self.btn_input = ctk.CTkButton(self, text="input", width=112, height=32, corner_radius=0,
                                        fg_color="#455f8b", command=lambda: os.startfile(self.input_path))
-        self._place(self.btn_input, 563, 610)
+        self._place(self.btn_input, 563, 620)
 
         self.btn_output = ctk.CTkButton(self, text="output", width=112, height=32, corner_radius=0,
                                         fg_color="#455f8b", command=lambda: os.startfile(self.output_path))
-        self._place(self.btn_output, 691, 610)
+        self._place(self.btn_output, 691, 620)
 
         self.btn_generate = ctk.CTkButton(self, text="Generate", width=240, height=44, corner_radius=0,
                                           font=("Trebuchet MS", 18, "bold"), fg_color="#212d5d",
                                           command=self.run_process)
-        self._place(self.btn_generate, 563, 650)
+        self._place(self.btn_generate, 563, 660)
 
         self.credits_label = ctk.CTkLabel(self, text="By IADhunter", font=("Trebuchet MS", 12),
                     text_color="#aaaaaa", width=120, height=20)
@@ -512,6 +550,25 @@ class RCBEApp(ctk.CTk):
     def cycle_rain_view(self, direction):
         self.rain_view_index = (self.rain_view_index + direction) % len(self.rain_view_options)
         self.lbl_rain_view.configure(text=self.rain_view_options[self.rain_view_index])
+
+    def _on_rain_cycles_toggle(self):
+        rain_on = bool(self.sw_rain_cycles.get())
+        state = "normal" if rain_on else "disabled"
+        for widget in (
+            self.btn_type_prev, self.btn_type_next,
+            self.btn_view_prev, self.btn_view_next,
+            self.ent_rain_tint_1, self.ent_rain_tint_2,
+            self.chk_rain_tint_clear,
+        ):
+            widget.configure(state=state)
+        if not rain_on:
+            self.sw_bkg_only_view.deselect()
+        self.sw_bkg_only_view.configure(state=state)
+        self._on_bkg_only_view_toggle()
+
+    def _on_bkg_only_view_toggle(self):
+        on = bool(self.sw_bkg_only_view.get() and self.sw_rain_cycles.get())
+        self.ent_bkg_view.configure(state="normal" if on else "disabled")
 
     @staticmethod
     def _tint_value(entry):
@@ -560,17 +617,23 @@ class RCBEApp(ctk.CTk):
             rain_enabled = bool(self.sw_rain_cycles.get())
             rain_type = self.rain_type_options[self.rain_type_index]
             rain_view = self.rain_view_options[self.rain_view_index]
+            if rain_type == "Keep":
+                rain_type = None
+            if rain_view == "Keep":
+                rain_view = None
 
             tint_1 = self._tint_value(self.ent_rain_tint_1)
             tint_2 = self._tint_value(self.ent_rain_tint_2)
-            if tint_1 and tint_2:
+            if self.chk_rain_tint_clear.get():
+                rain_tint = ""  # borrar tinte explícitamente
+            elif tint_1 and tint_2:
                 rain_tint = f"{tint_1} {tint_2}"
             elif tint_1:
                 rain_tint = tint_1
             elif tint_2:
                 rain_tint = tint_2
             else:
-                rain_tint = None
+                rain_tint = None  # vacío = conservar el tinte existente
 
             # Modify Effect Color A/B
             modify_effect_a_enabled = bool(self.sw_modify_effect_a.get())
@@ -584,6 +647,17 @@ class RCBEApp(ctk.CTk):
             effect_b_s_mult = float(self.ent_ecb_s.get())
             effect_b_v_mult = float(self.ent_ecb_v.get())
             only_effect_b = bool(self.sw_only_effect_b.get())
+
+            # Bkg: activo solo si hay mod + sky (tag inválido sin sky).
+            bkg_mod = self.ent_bkg_mod.get().strip()
+            bkg_sky = self.ent_bkg_sky.get().strip()
+            bkg_fog = self.ent_bkg_fog.get().strip()
+            bkg_sun = self.ent_bkg_sun.get().strip()
+            bkg_only_view = bool(self.sw_bkg_only_view.get())
+            bkg_view = self.ent_bkg_view.get().strip() or None
+            if bkg_only_view and bkg_view and not core._resolve_view_effects(bkg_view):
+                raise ValueError(f"Unknown vanilla view effect: {bkg_view}")
+            bkg_enabled = bool(bkg_mod and bkg_sky)
 
             target_files = [f for f in os.listdir(self.input_path) if f.endswith(".txt")]
             processed = 0
@@ -604,11 +678,13 @@ class RCBEApp(ctk.CTk):
                     rain_enabled, rain_type, rain_view, rain_tint,
                     rules_template, template_create,
                     modify_effect_a_enabled, effect_a_h_mult, effect_a_s_mult, effect_a_v_mult, only_effect_a,
-                    modify_effect_b_enabled, effect_b_h_mult, effect_b_s_mult, effect_b_v_mult, only_effect_b
+                    modify_effect_b_enabled, effect_b_h_mult, effect_b_s_mult, effect_b_v_mult, only_effect_b,
+                    bkg_enabled, bkg_mod, bkg_sky, bkg_fog, bkg_sun, bkg_only_view,
+                    bkg_view
                 )
 
-                with open(os.path.join(self.output_path, file_name), 'w', encoding='utf-8') as f:
-                    f.writelines(result)
+                newline = core.detect_newline(os.path.join(self.input_path, file_name))
+                core.write_setting_lines(os.path.join(self.output_path, file_name), result, newline)
                 processed += 1
 
             self.console_log.configure(text=f"🍉 Success: {processed} Settings 🍉", text_color="green")
